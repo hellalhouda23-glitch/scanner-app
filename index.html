@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#0b62b0">
+  <meta name="description" content="Iskaan — Scan + Auto OCR: Arabic / English / French">
+
+  <title>Iskaan — Smart Document Scanner</title>
+
+  <link rel="manifest" href="./manifest.json">
+  <link rel="icon" href="./icons/icon-192.png" type="image/png" sizes="192x192">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png">
+  <link rel="stylesheet" href="./styles.css">
+
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Iskaan">
+</head>
+<body>
+
+<header>
+  <h1>Iskaan</h1>
+  <p>Smart Document Scanner — عربي / English / Français</p>
+</header>
+
+<div id="ios-install-hint" class="install-hint" style="display:none">
+  <button class="close" id="ios-hint-close" aria-label="Close">×</button>
+  <b>Install Iskaan on your device:</b>
+  <ol>
+    <li>Tap the <b>Share</b> button <span style="font-size:18px">⎙</span> at the bottom</li>
+    <li>Choose <b>"Add to Home Screen"</b></li>
+    <li>Tap <b>"Add"</b></li>
+  </ol>
+</div>
+
+<div class="lang-row" role="tablist" aria-label="OCR language">
+  <button class="chip active" data-lang="ara" role="tab">العربية</button>
+  <button class="chip" data-lang="eng" role="tab">English</button>
+  <button class="chip" data-lang="fra" role="tab">Français</button>
+  <button class="chip" data-lang="ara+eng" role="tab">عربي + English</button>
+</div>
+
+<div class="camera-stage" id="camera-stage">
+  <video id="video" autoplay playsinline muted style="display:none"></video>
+  <img id="preview" alt="Scan preview" style="display:none">
+  <div class="placeholder" id="placeholder">
+    Tap <b>"Open Camera"</b> to start scanning
+  </div>
+</div>
+
+<div class="actions">
+  <button class="btn primary" id="btn-open-camera">📷 Open Camera</button>
+  <button class="btn" id="btn-capture" disabled>📸 Capture</button>
+  <button class="btn" id="btn-retake" disabled>↺ Retake</button>
+</div>
+
+<div class="actions">
+  <label class="btn" for="file-input">📁 Upload Image</label>
+  <input type="file" id="file-input" accept="image/*" style="display:none">
+  <button class="btn" id="btn-ocr" disabled>🔍 Extract Text</button>
+</div>
+
+<div id="status" class="status info" style="display:none"></div>
+
+<div id="result" class="result-box empty">Extracted text will appear here…</div>
+
+<div class="actions" id="export-actions" style="display:none">
+  <button class="btn primary" id="btn-export-pdf">⬇ Export PDF</button>
+  <button class="btn" id="btn-export-txt">⬇ Export Text</button>
+</div>
+
+<div id="loader" class="loader-overlay hidden">
+  <div class="spinner"></div>
+  <div id="loader-text">Loading OCR engine…</div>
+</div>
+
+<script src="./app.js"></script>
+</body>
+</html>
