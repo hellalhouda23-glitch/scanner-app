@@ -1,22 +1,14 @@
-/* =========================================================
- * Iskaan PWA — main app logic (with full i18n)
- * ========================================================= */
-
-const state =function stopCamera(){
-  {
+const state = {
   stream: null,
   imageBlob: null,
   imageDataURL: null,
   ocrText: '',
-  lang: 'ara',          // OCR language (Tesseract)
-  uiLang: 'ara',        // UI display language (NEW)
+  lang: 'ara',
+  uiLang: 'ara',
   worker: null,
   tesseractReady: false
 };
-
 const $ = id => document.getElementById(id);
-
-// ====== i18n Translation Dictionary ======
 const I18N = {
   ara: {
     dir: 'rtl',
@@ -147,8 +139,6 @@ const I18N = {
     loaderProcessing: (p, s) => `Processing text: ${Math.round(p * 100)}% — ${s || ''}`
   }
 };
-
-// Map chip data-lang → i18n key (handles both Arabic labels and language codes)
 function getI18nKey(value) {
   const map = {
     'français': 'fra', 'francais': 'fra', 'fra': 'fra',
@@ -159,8 +149,6 @@ function getI18nKey(value) {
   if (!value) return 'ara';
   return map[value] || map[String(value).trim().toLowerCase()] || 'ara';
 }
-
-// Update a button's text while preserving icon children
 function setButtonText(btn, newText) {
   if (!btn) return;
   Array.from(btn.childNodes)
@@ -168,17 +156,13 @@ function setButtonText(btn, newText) {
     .forEach(n => n.remove());
   btn.appendChild(document.createTextNode(' ' + newText + ' '));
 }
-
-// Apply translations to UI
 function applyTranslations() {
   const t = I18N[state.uiLang] || I18N.ara;
   document.documentElement.setAttribute('dir', t.dir);
   document.documentElement.setAttribute('lang', state.uiLang);
-
   if ($('app-title')) $('app-title').textContent = t.appTitle;
   if ($('app-tagline')) $('app-tagline').textContent = t.tagline;
   if ($('placeholder')) $('placeholder').textContent = t.placeholder;
-
   setButtonText($('btn-open-camera'), t.btnOpenCamera);
   setButtonText($('btn-capture'), t.btnCapture);
   setButtonText($('btn-retake'), t.btnRetake);
@@ -186,14 +170,11 @@ function applyTranslations() {
   setButtonText($('btn-upload'), t.btnUpload);
   setButtonText($('btn-export-pdf'), t.btnExportPdf);
   setButtonText($('btn-export-txt'), t.btnExportTxt);
-
   const resultEl = $('result');
   if (resultEl && resultEl.classList.contains('empty')) {
     resultEl.textContent = t.resultPlaceholder;
   }
 }
-
-// ====== Load External Script Dynamically ======
 function loadScript(src) {
   return new Promise((resolve, reject) => {
     if (document.querySelector(`script[src="${src}"]`)) {
@@ -207,8 +188,6 @@ function loadScript(src) {
     document.head.appendChild(script);
   });
 }
-
-// ====== Tesseract.js loaded ON DEMAND ======
 async function ensureTesseractReady() {
   if (state.tesseractReady && state.worker) return state.worker;
   const t = I18N[state.uiLang];
@@ -234,8 +213,6 @@ async function ensureTesseractReady() {
     throw err;
   }
 }
-
-// ====== Camera ======
 async function openCamera(){
   const t = I18N[state.uiLang];
   try {
@@ -255,7 +232,6 @@ async function openCamera(){
     showStatus(t.statusCameraError(err.message), 'error');
   }
 }
-
 function captureImage(){
   if (!state.stream) return;
   const t = I18N[state.uiLang];
@@ -278,13 +254,12 @@ function captureImage(){
     showStatus(t.statusImageCaptured, 'success');
   }, 'image/png');
 }
-
- if (state.stream) {
+function stopCamera(){
+  if (state.stream) {
     state.stream.getTracks().forEach(t => t.stop());
     state.stream = null;
   }
 }
-
 function retake(){
   const t = I18N[state.uiLang];
   state.imageBlob = null;
@@ -299,7 +274,6 @@ function retake(){
   $('btn-retake').disabled = true;
   openCamera();
 }
-
 function handleFileUpload(e){
   const t = I18N[state.uiLang];
   const file = e.target.files?.[0];
@@ -317,9 +291,7 @@ function handleFileUpload(e){
     showStatus(t.statusImageUploaded, 'success');
   };
   reader.readAsDataURL(file);
-}
-
-// ====== OCR ======
+               }
 async function runOCR(){
   const t = I18N[state.uiLang];
   if (!state.imageDataURL) return;
@@ -338,8 +310,6 @@ async function runOCR(){
     hideLoader();
   }
 }
-
-// ====== Arabic shape+reverse for jsPDF ======
 const ARABIC_LIGATURES = {
   'لا': 'ﻻ', 'ﻷ': 'ﻷ', 'ﻹ': 'ﻹ', 'ﻵ': 'ﻵ',
   'الله': 'ﺍﻟﻠﻪ', 'علي': 'ﻋﻠﻲ', 'على': 'ﻋﻠﻰ'
@@ -352,8 +322,6 @@ function shapeArabic(input){
   }
   return s.split('').reverse().join('');
 }
-
-// ====== PDF Export with Amiri ======
 async function exportPDF(){
   const t = I18N[state.uiLang];
   if (!state.ocrText) return;
@@ -362,14 +330,12 @@ async function exportPDF(){
     await loadScript('https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js');
     const jsPDFCtor = window.jspdf?.jsPDF || window.jsPDF;
     if (!jsPDFCtor) throw new Error('jsPDF not available');
-
     const doc = new jsPDFCtor({ orientation: 'p', unit: 'mm', format: 'a4' });
     const amiriB64 = await loadAmiriBase64();
     doc.addFileToVFS('Amiri-Regular.ttf', amiriB64);
     doc.addFont('Amiri-Regular.ttf', 'Amiri', 'normal');
     doc.setFont('Amiri');
     doc.setFontSize(14);
-
     const lines = state.ocrText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
     const shaped = lines.map(shapeArabic);
     const pageW = doc.internal.pageSize.getWidth();
@@ -406,7 +372,6 @@ async function exportPDF(){
     hideLoader();
   }
 }
-
 let _amiriB64Cache = null;
 async function loadAmiriBase64(){
   if (_amiriB64Cache) return _amiriB64Cache;
@@ -423,7 +388,6 @@ async function loadAmiriBase64(){
   _amiriB64Cache = btoa(bin);
   return _amiriB64Cache;
 }
-
 function exportTXT(){
   const t = I18N[state.uiLang];
   if (!state.ocrText) return;
@@ -435,27 +399,21 @@ function exportTXT(){
   setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 100);
   showStatus(t.statusTxtSuccess, 'success');
 }
-
 function setLang(value){
   const uiLang = getI18nKey(value);
   const t = I18N[uiLang];
   if (!t) return;
-
   state.uiLang = uiLang;
   state.lang = t.ocrLang;
   state.tesseractReady = false;
-
   document.querySelectorAll('.chip').forEach(c =>
     c.classList.toggle('active', c.dataset.lang === value));
-
   if (state.worker) {
     state.worker.terminate?.();
     state.worker = null;
   }
-
   applyTranslations();
 }
-
 function showStatus(msg, kind){
   const el = $('status');
   el.textContent = msg;
@@ -467,7 +425,6 @@ function showLoader(text){
   $('loader').classList.remove('hidden');
 }
 function hideLoader(){ $('loader').classList.add('hidden'); }
-
 function maybeShowIOSHint(){
   const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) ||
                 (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -478,7 +435,6 @@ function maybeShowIOSHint(){
     $('ios-install-hint').style.display = 'block';
   }
 }
-
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('./service-worker.js')
@@ -486,10 +442,8 @@ if ('serviceWorker' in navigator) {
       .catch(err => console.warn('SW failed:', err));
   });
 }
-
 window.addEventListener('DOMContentLoaded', () => {
   applyTranslations();
-
   $('btn-open-camera')?.addEventListener('click', openCamera);
   $('btn-capture')?.addEventListener('click', captureImage);
   $('btn-retake')?.addEventListener('click', retake);
@@ -505,5 +459,4 @@ window.addEventListener('DOMContentLoaded', () => {
     c.addEventListener('click', () => setLang(c.dataset.lang)));
   maybeShowIOSHint();
 });
-
 window.addEventListener('pagehide', stopCamera);
