@@ -1,22 +1,197 @@
-  /* =========================================================
- * Iskaan PWA — main app logic
- * - Tesseract.js loaded ON DEMAND via CDN
- * - Service Worker does NOT precache Tesseract assets
- * - jsPDF loaded on demand for PDF export
- * - Amiri font embedded in PDF for Arabic RTL rendering
+/* =========================================================
+ * Iskaan PWA — main app logic (with full i18n)
  * ========================================================= */
 
-const state = {
+const state =function stopCamera(){
+  {
   stream: null,
   imageBlob: null,
   imageDataURL: null,
   ocrText: '',
-  lang: 'ara+eng',
+  lang: 'ara',          // OCR language (Tesseract)
+  uiLang: 'ara',        // UI display language (NEW)
   worker: null,
   tesseractReady: false
 };
 
 const $ = id => document.getElementById(id);
+
+// ====== i18n Translation Dictionary ======
+const I18N = {
+  ara: {
+    dir: 'rtl',
+    ocrLang: 'ara',
+    appTitle: 'إسكان',
+    tagline: 'ماسح المستندات الذكي',
+    placeholder: 'اضغطي "فتح الكاميرا" لبدء المسح',
+    btnOpenCamera: 'فتح الكاميرا',
+    btnCapture: 'التقاط',
+    btnRetake: 'إعادة',
+    btnOcr: 'استخراج النص',
+    btnUpload: 'رفع صورة',
+    btnExportPdf: 'تصدير PDF',
+    btnExportTxt: 'تصدير نص',
+    resultPlaceholder: 'سيظهر النص المستخرج هنا…',
+    statusCameraReady: 'الكاميرا جاهزة — وجهيها نحو المستند',
+    statusImageCaptured: 'تم التقاط الصورة. اضغطي على "استخراج النص"',
+    statusImageUploaded: 'تم تحميل الصورة. اضغطي على "استخراج النص"',
+    statusOcrSuccess: n => `تم بنجاح — تم استخراج ${n} حرفاً`,
+    statusNoText: '(لم يتم اكتشاف أي نص)',
+    statusCameraError: e => 'تعذر فتح الكاميرا: ' + (e || 'تحققي من الصلاحيات'),
+    statusTesseractError: 'فشل في تحميل محرك التعرف على النصوص. تأكدي من الاتصال بالإنترنت.',
+    statusOcrError: e => 'فشل استخراج النص: ' + (e || ''),
+    statusPdfGenerating: 'جارٍ إنشاء ملف PDF…',
+    statusPdfSuccess: 'تم تحميل ملف PDF بنجاح',
+    statusPdfError: e => 'فشل إنشاء PDF: ' + (e || ''),
+    statusTxtSuccess: 'تم تحميل ملف TXT بنجاح',
+    loaderTesseract: 'جارٍ تحميل محرك التعرف على النصوص… قد يستغرق بضع ثوانٍ',
+    loaderLang: 'جارٍ إعداد محرك اللغة…',
+    loaderOcr: 'جارٍ استخراج النص من الصورة…',
+    loaderPdf: 'جارٍ إنشاء ملف PDF…',
+    loaderProcessing: (p, s) => `معالجة النص: ${Math.round(p * 100)}% — ${s || ''}`
+  },
+  eng: {
+    dir: 'ltr',
+    ocrLang: 'eng',
+    appTitle: 'Iskaan',
+    tagline: 'Smart Document Scanner',
+    placeholder: 'Tap "Open Camera" to start scanning',
+    btnOpenCamera: 'Open Camera',
+    btnCapture: 'Capture',
+    btnRetake: 'Retake',
+    btnOcr: 'Extract Text',
+    btnUpload: 'Upload Image',
+    btnExportPdf: 'Export PDF',
+    btnExportTxt: 'Export Text',
+    resultPlaceholder: 'Extracted text will appear here…',
+    statusCameraReady: 'Camera ready — point it at the document',
+    statusImageCaptured: 'Image captured. Tap "Extract Text"',
+    statusImageUploaded: 'Image uploaded. Tap "Extract Text"',
+    statusOcrSuccess: n => `Success — extracted ${n} characters`,
+    statusNoText: '(No text detected)',
+    statusCameraError: e => 'Cannot open camera: ' + (e || 'check permissions'),
+    statusTesseractError: 'Failed to load text recognition engine. Check your internet connection.',
+    statusOcrError: e => 'Text extraction failed: ' + (e || ''),
+    statusPdfGenerating: 'Generating PDF…',
+    statusPdfSuccess: 'PDF file downloaded successfully',
+    statusPdfError: e => 'PDF creation failed: ' + (e || ''),
+    statusTxtSuccess: 'TXT file downloaded successfully',
+    loaderTesseract: 'Loading text recognition engine… may take a few seconds',
+    loaderLang: 'Setting up language engine…',
+    loaderOcr: 'Extracting text from image…',
+    loaderPdf: 'Generating PDF…',
+    loaderProcessing: (p, s) => `Processing text: ${Math.round(p * 100)}% — ${s || ''}`
+  },
+  fra: {
+    dir: 'ltr',
+    ocrLang: 'fra',
+    appTitle: 'Iskaan',
+    tagline: 'Scanner de Documents Intelligent',
+    placeholder: 'Appuyez sur « Ouvrir Caméra » pour commencer',
+    btnOpenCamera: 'Ouvrir Caméra',
+    btnCapture: 'Capturer',
+    btnRetake: 'Reprendre',
+    btnOcr: 'Extraire le Texte',
+    btnUpload: 'Télécharger Image',
+    btnExportPdf: 'Exporter PDF',
+    btnExportTxt: 'Exporter Texte',
+    resultPlaceholder: 'Le texte extrait apparaîtra ici…',
+    statusCameraReady: 'Caméra prête — pointez-la vers le document',
+    statusImageCaptured: 'Image capturée. Appuyez sur « Extraire Texte »',
+    statusImageUploaded: 'Image téléchargée. Appuyez sur « Extraire Texte »',
+    statusOcrSuccess: n => `Succès — ${n} caractères extraits`,
+    statusNoText: '(Aucun texte détecté)',
+    statusCameraError: e => 'Impossible d\'ouvrir la caméra : ' + (e || 'vérifiez les autorisations'),
+    statusTesseractError: 'Échec du chargement du moteur de reconnaissance. Vérifiez votre connexion.',
+    statusOcrError: e => 'Échec de l\'extraction du texte : ' + (e || ''),
+    statusPdfGenerating: 'Génération du PDF…',
+    statusPdfSuccess: 'Fichier PDF téléchargé avec succès',
+    statusPdfError: e => 'Échec de la création du PDF : ' + (e || ''),
+    statusTxtSuccess: 'Fichier TXT téléchargé avec succès',
+    loaderTesseract: 'Chargement du moteur de reconnaissance… peut prendre quelques secondes',
+    loaderLang: 'Configuration du moteur de langue…',
+    loaderOcr: 'Extraction du texte de l\'image…',
+    loaderPdf: 'Génération du PDF…',
+    loaderProcessing: (p, s) => `Traitement du texte : ${Math.round(p * 100)}% — ${s || ''}`
+  },
+  engara: {
+    dir: 'ltr',
+    ocrLang: 'eng+ara',
+    appTitle: 'Iskaan',
+    tagline: 'Smart Document Scanner — ماسح المستندات الذكي',
+    placeholder: 'Tap "Open Camera" to start scanning',
+    btnOpenCamera: 'Open Camera',
+    btnCapture: 'Capture',
+    btnRetake: 'Retake',
+    btnOcr: 'Extract Text',
+    btnUpload: 'Upload Image',
+    btnExportPdf: 'Export PDF',
+    btnExportTxt: 'Export Text',
+    resultPlaceholder: 'Extracted text will appear here…',
+    statusCameraReady: 'Camera ready — point it at the document',
+    statusImageCaptured: 'Image captured. Tap "Extract Text"',
+    statusImageUploaded: 'Image uploaded. Tap "Extract Text"',
+    statusOcrSuccess: n => `Success — extracted ${n} characters`,
+    statusNoText: '(No text detected)',
+    statusCameraError: e => 'Cannot open camera: ' + (e || 'check permissions'),
+    statusTesseractError: 'Failed to load text recognition engine. Check your internet connection.',
+    statusOcrError: e => 'Text extraction failed: ' + (e || ''),
+    statusPdfGenerating: 'Generating PDF…',
+    statusPdfSuccess: 'PDF file downloaded successfully',
+    statusPdfError: e => 'PDF creation failed: ' + (e || ''),
+    statusTxtSuccess: 'TXT file downloaded successfully',
+    loaderTesseract: 'Loading text recognition engine… may take a few seconds',
+    loaderLang: 'Setting up language engine…',
+    loaderOcr: 'Extracting text from image…',
+    loaderPdf: 'Generating PDF…',
+    loaderProcessing: (p, s) => `Processing text: ${Math.round(p * 100)}% — ${s || ''}`
+  }
+};
+
+// Map chip data-lang → i18n key (handles both Arabic labels and language codes)
+function getI18nKey(value) {
+  const map = {
+    'français': 'fra', 'francais': 'fra', 'fra': 'fra',
+    'english': 'eng', 'eng': 'eng',
+    'العربية': 'ara', 'العربيه': 'ara', 'ara': 'ara',
+    'english + عربي': 'engara', 'eng+ara': 'engara', 'engara': 'engara'
+  };
+  if (!value) return 'ara';
+  return map[value] || map[String(value).trim().toLowerCase()] || 'ara';
+}
+
+// Update a button's text while preserving icon children
+function setButtonText(btn, newText) {
+  if (!btn) return;
+  Array.from(btn.childNodes)
+    .filter(n => n.nodeType === Node.TEXT_NODE)
+    .forEach(n => n.remove());
+  btn.appendChild(document.createTextNode(' ' + newText + ' '));
+}
+
+// Apply translations to UI
+function applyTranslations() {
+  const t = I18N[state.uiLang] || I18N.ara;
+  document.documentElement.setAttribute('dir', t.dir);
+  document.documentElement.setAttribute('lang', state.uiLang);
+
+  if ($('app-title')) $('app-title').textContent = t.appTitle;
+  if ($('app-tagline')) $('app-tagline').textContent = t.tagline;
+  if ($('placeholder')) $('placeholder').textContent = t.placeholder;
+
+  setButtonText($('btn-open-camera'), t.btnOpenCamera);
+  setButtonText($('btn-capture'), t.btnCapture);
+  setButtonText($('btn-retake'), t.btnRetake);
+  setButtonText($('btn-ocr'), t.btnOcr);
+  setButtonText($('btn-upload'), t.btnUpload);
+  setButtonText($('btn-export-pdf'), t.btnExportPdf);
+  setButtonText($('btn-export-txt'), t.btnExportTxt);
+
+  const resultEl = $('result');
+  if (resultEl && resultEl.classList.contains('empty')) {
+    resultEl.textContent = t.resultPlaceholder;
+  }
+}
 
 // ====== Load External Script Dynamically ======
 function loadScript(src) {
@@ -36,37 +211,33 @@ function loadScript(src) {
 // ====== Tesseract.js loaded ON DEMAND ======
 async function ensureTesseractReady() {
   if (state.tesseractReady && state.worker) return state.worker;
-
-  showLoader('جارٍ تحميل محرك التعرف على النصوص… قد يستغرق بضع ثوانٍ');
+  const t = I18N[state.uiLang];
+  showLoader(t.loaderTesseract);
   try {
-    // تحميل مكتبة Tesseract بشكل مستقر
     await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js');
-
     const langs = state.lang.replace(/\s/g, '');
-    showLoader('جارٍ إعداد محرك اللغة…');
-    
-    // إنشاء الـ Worker المتوافق مع Tesseract v5
+    showLoader(t.loaderLang);
     const worker = await Tesseract.createWorker(langs, 1, {
       logger: m => {
         if (m.progress != null) {
-          showLoader(`معالجة النص: ${Math.round(m.progress * 100)}% — ${m.status || ''}`);
+          showLoader(t.loaderProcessing(m.progress, m.status));
         }
       }
     });
-
     state.worker = worker;
     state.tesseractReady = true;
     hideLoader();
     return worker;
   } catch (err) {
     hideLoader();
-    showStatus('فشل في تحميل محرك التعرف على النصوص. تأكدي من الاتصال بالإنترنت.', 'error');
+    showStatus(t.statusTesseractError, 'error');
     throw err;
   }
 }
 
 // ====== Camera ======
 async function openCamera(){
+  const t = I18N[state.uiLang];
   try {
     state.stream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
@@ -76,55 +247,61 @@ async function openCamera(){
     video.srcObject = state.stream;
     video.style.display = 'block';
     $('placeholder').style.display = 'none';
-    $('preview').style.display = 'none';$('btn-capture').disabled = false;
+    $('preview').style.display = 'none';
+    $('btn-capture').disabled = false;
     $('btn-open-camera').disabled = true;
-    showStatus('الكاميرا جاهزة — وجهيها نحو المستند', 'info');
+    showStatus(t.statusCameraReady, 'info');
   } catch (err) {
-    showStatus('تعذر فتح الكاميرا: ' + (err.message || 'تحققي من الصلاحيات'), 'error');
+    showStatus(t.statusCameraError(err.message), 'error');
   }
 }
 
 function captureImage(){
   if (!state.stream) return;
+  const t = I18N[state.uiLang];
   const video = $('video');
   const canvas = document.createElement('canvas');
   canvas.width  = video.videoWidth;
   canvas.height = video.videoHeight;
   const ctx = canvas.getContext('2d');
   ctx.drawImage(video, 0, 0);
-
   canvas.toBlob(blob => {
     state.imageBlob = blob;
-    $('preview').src = URL.createObjectURL(blob);$('preview').style.display = 'block';
-    $('video').style.display = 'none';$('btn-capture').disabled = true;
+    $('preview').src = URL.createObjectURL(blob);
+    $('preview').style.display = 'block';
+    $('video').style.display = 'none';
+    $('btn-capture').disabled = true;
     $('btn-retake').disabled = false;
     $('btn-ocr').disabled = false;
     state.imageDataURL = canvas.toDataURL('image/png');
     stopCamera();
-    showStatus('تم التقاط الصورة. اضغطي على "استخراج النص"', 'success');
+    showStatus(t.statusImageCaptured, 'success');
   }, 'image/png');
 }
 
-function stopCamera(){
-  if (state.stream) {
+ if (state.stream) {
     state.stream.getTracks().forEach(t => t.stop());
     state.stream = null;
   }
 }
 
 function retake(){
+  const t = I18N[state.uiLang];
   state.imageBlob = null;
   state.imageDataURL = null;
   state.ocrText = '';
   $('preview').style.display = 'none';
-  $('preview').src = '';$('result').textContent = 'سيظهر النص المستخرج هنا…';
+  $('preview').src = '';
+  $('result').textContent = t.resultPlaceholder;
   $('result').classList.add('empty');
-  $('export-actions').style.display = 'none';$('btn-ocr').disabled = true;
+  $('export-actions').style.display = 'none';
+  $('btn-ocr').disabled = true;
   $('btn-retake').disabled = true;
   openCamera();
 }
 
 function handleFileUpload(e){
+  const t = I18N[state.uiLang];
   const file = e.target.files?.[0];
   if (!file) return;
   state.imageBlob = file;
@@ -132,27 +309,31 @@ function handleFileUpload(e){
   reader.onload = ev => {
     state.imageDataURL = ev.target.result;
     $('preview').src = state.imageDataURL;
-    $('preview').style.display = 'block';$('video').style.display = 'none';
-    $('placeholder').style.display = 'none';$('btn-ocr').disabled = false;
+    $('preview').style.display = 'block';
+    $('video').style.display = 'none';
+    $('placeholder').style.display = 'none';
+    $('btn-ocr').disabled = false;
     $('btn-retake').disabled = false;
-    showStatus('تم تحميل الصورة. اضغطي على "استخراج النص"', 'success');
+    showStatus(t.statusImageUploaded, 'success');
   };
   reader.readAsDataURL(file);
 }
 
 // ====== OCR ======
 async function runOCR(){
+  const t = I18N[state.uiLang];
   if (!state.imageDataURL) return;
   try {
     const worker = await ensureTesseractReady();
-    showLoader('جارٍ استخراج النص من الصورة…');
+    showLoader(t.loaderOcr);
     const { data } = await worker.recognize(state.imageDataURL);
     state.ocrText = data.text || '';
-    $('result').textContent = state.ocrText || '(لم يتم اكتشاف أي نص)';
-    $('result').classList.remove('empty');$('export-actions').style.display = 'flex';
-    showStatus(`تم بنجاح — تم استخراج ${state.ocrText.length} حرفاً`, 'success');
+    $('result').textContent = state.ocrText || t.statusNoText;
+    $('result').classList.remove('empty');
+    $('export-actions').style.display = 'flex';
+    showStatus(t.statusOcrSuccess(state.ocrText.length), 'success');
   } catch (err) {
-    showStatus('فشل استخراج النص: ' + (err.message || err), 'error');
+    showStatus(t.statusOcrError(err.message || err), 'error');
   } finally {
     hideLoader();
   }
@@ -174,12 +355,13 @@ function shapeArabic(input){
 
 // ====== PDF Export with Amiri ======
 async function exportPDF(){
+  const t = I18N[state.uiLang];
   if (!state.ocrText) return;
-  showLoader('جارٍ إنشاء ملف PDF…');
+  showLoader(t.loaderPdf);
   try {
     await loadScript('https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js');
     const jsPDFCtor = window.jspdf?.jsPDF || window.jsPDF;
-    if (!jsPDFCtor) throw new Error('مكتبة jsPDF غير متاحة');
+    if (!jsPDFCtor) throw new Error('jsPDF not available');
 
     const doc = new jsPDFCtor({ orientation: 'p', unit: 'mm', format: 'a4' });
     const amiriB64 = await loadAmiriBase64();
@@ -217,9 +399,9 @@ async function exportPDF(){
       doc.addImage(state.imageDataURL, 'PNG', margin, margin, imgW, imgW * ratio);
     }
     doc.save(`iskaan-${Date.now()}.pdf`);
-    showStatus('تم تحميل ملف PDF بنجاح', 'success');
+    showStatus(t.statusPdfSuccess, 'success');
   } catch (err) {
-    showStatus('فشل إنشاء PDF: ' + err.message, 'error');
+    showStatus(t.statusPdfError(err.message), 'error');
   } finally {
     hideLoader();
   }
@@ -230,7 +412,7 @@ async function loadAmiriBase64(){
   if (_amiriB64Cache) return _amiriB64Cache;
   const url = './Amiri-Regular.ttf';
   const resp = await fetch(url);
-  if (!resp.ok) throw new Error('فشل تحميل خط Amiri');
+  if (!resp.ok) throw new Error('Failed to load Amiri font');
   const buf = await resp.arrayBuffer();
   const bytes = new Uint8Array(buf);
   let bin = '';
@@ -243,6 +425,7 @@ async function loadAmiriBase64(){
 }
 
 function exportTXT(){
+  const t = I18N[state.uiLang];
   if (!state.ocrText) return;
   const blob = new Blob([state.ocrText], { type: 'text/plain;charset=utf-8' });
   const url = URL.createObjectURL(blob);
@@ -250,18 +433,27 @@ function exportTXT(){
   a.href = url; a.download = `iskaan-${Date.now()}.txt`;
   document.body.appendChild(a); a.click();
   setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 100);
-  showStatus('تم تحميل ملف TXT بنجاح', 'success');
+  showStatus(t.statusTxtSuccess, 'success');
 }
 
-function setLang(lang){
-  state.lang = lang;
+function setLang(value){
+  const uiLang = getI18nKey(value);
+  const t = I18N[uiLang];
+  if (!t) return;
+
+  state.uiLang = uiLang;
+  state.lang = t.ocrLang;
   state.tesseractReady = false;
+
   document.querySelectorAll('.chip').forEach(c =>
-    c.classList.toggle('active', c.dataset.lang === lang));
+    c.classList.toggle('active', c.dataset.lang === value));
+
   if (state.worker) {
     state.worker.terminate?.();
     state.worker = null;
   }
+
+  applyTranslations();
 }
 
 function showStatus(msg, kind){
@@ -271,7 +463,7 @@ function showStatus(msg, kind){
   el.style.display = 'block';
 }
 function showLoader(text){
-  $('loader-text').textContent = text || 'جارٍ التحميل…';
+  $('loader-text').textContent = text || 'Loading…';
   $('loader').classList.remove('hidden');
 }
 function hideLoader(){ $('loader').classList.add('hidden'); }
@@ -296,11 +488,17 @@ if ('serviceWorker' in navigator) {
 }
 
 window.addEventListener('DOMContentLoaded', () => {
+  applyTranslations();
+
   $('btn-open-camera')?.addEventListener('click', openCamera);
-  $('btn-capture')?.addEventListener('click', captureImage);$('btn-retake')?.addEventListener('click', retake);
-  $('btn-ocr')?.addEventListener('click', runOCR);$('file-input')?.addEventListener('change', handleFileUpload);
-  $('btn-export-pdf')?.addEventListener('click', exportPDF);$('btn-export-txt')?.addEventListener('click', exportTXT);
-  $('ios-hint-close')?.addEventListener('click', () => {$('ios-install-hint').style.display = 'none';
+  $('btn-capture')?.addEventListener('click', captureImage);
+  $('btn-retake')?.addEventListener('click', retake);
+  $('btn-ocr')?.addEventListener('click', runOCR);
+  $('file-input')?.addEventListener('change', handleFileUpload);
+  $('btn-export-pdf')?.addEventListener('click', exportPDF);
+  $('btn-export-txt')?.addEventListener('click', exportTXT);
+  $('ios-hint-close')?.addEventListener('click', () => {
+    $('ios-install-hint').style.display = 'none';
     localStorage.setItem('iskaan-ios-hint-dismissed', '1');
   });
   document.querySelectorAll('.chip').forEach(c =>
@@ -309,4 +507,3 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 
 window.addEventListener('pagehide', stopCamera);
-                                           
