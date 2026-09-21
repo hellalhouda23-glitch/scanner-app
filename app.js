@@ -1,3 +1,4 @@
+console.log('APP.JS VERSION 2 LOADED');
 const state = {
   stream: null,
   imageBlob: null,
