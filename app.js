@@ -303,3 +303,181 @@ function handleFileUpload(e){
   };
   reader.readAsDataURL(file);
 }
+async function runOCR(){
+  const t = I18N[state.uiLang];
+  if (!state.imageDataURL) return;
+  try {
+    const worker = await ensureTesseractReady();
+    showLoader(t.loaderOcr);
+    const { data } = await worker.recognize(state.imageDataURL);
+    state.ocrText = data.text || '';
+    $('result').textContent = state.ocrText || t.statusNoText;
+    $('result').classList.remove('empty');
+    $('export-actions').style.display = 'flex';
+    showStatus(t.statusOcrSuccess(state.ocrText.length), 'success');
+  } catch (err) {
+    showStatus(t.statusOcrError(err.message || err), 'error');
+  } finally {
+    hideLoader();
+  }
+}
+
+const ARABIC_LIGATURES = {
+  'لا': 'ﻻ', 'ﻷ': 'ﻷ', 'ﻹ': 'ﻹ', 'ﻵ': 'ﻵ',
+  'الله': 'ﺍﻟﻠﻪ', 'علي': 'ﻋﻠﻲ', 'على': 'ﻋﻠﻰ'
+};
+function shapeArabic(input){
+  if (!input) return '';
+  let s = input;
+  for (const [a,b] of Object.entries(ARABIC_LIGATURES)) {
+    s = s.split(a).join(b);
+  }
+  return s.split('').reverse().join('');
+}
+
+async function exportPDF(){
+  const t = I18N[state.uiLang];
+  if (!state.ocrText) return;
+  showLoader(t.loaderPdf);
+  try {
+    await loadScript('https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js');
+    const jsPDFCtor = window.jspdf?.jsPDF || window.jsPDF;
+    if (!jsPDFCtor) throw new Error('jsPDF not available');
+    const doc = new jsPDFCtor({ orientation: 'p', unit: 'mm', format: 'a4' });
+    const amiriB64 = await loadAmiriBase64();
+    doc.addFileToVFS('Amiri-Regular.ttf', amiriB64);
+    doc.addFont('Amiri-Regular.ttf', 'Amiri', 'normal');
+    doc.setFont('Amiri');
+    doc.setFontSize(14);
+    const lines = state.ocrText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    const shaped = lines.map(shapeArabic);
+    const pageW = doc.internal.pageSize.getWidth();
+    const pageH = doc.internal.pageSize.getHeight();
+    const margin = 15;
+    const lineHeight = 8;
+    const maxLinesPerPage = Math.floor((pageH - margin*2) / lineHeight);
+    let y = margin + lineHeight;
+    let lineCount = 0;
+    doc.setRTL?.(true);
+    for (const ln of shaped) {
+      if (lineCount >= maxLinesPerPage) {
+        doc.addPage();
+        y = margin + lineHeight;
+        lineCount = 0;
+      }
+      doc.text(ln, pageW - margin, y, { align: 'right' });
+      y += lineHeight;
+      lineCount++;
+    }
+    if (state.imageDataURL) {
+      const img = new Image();
+      img.src = state.imageDataURL;
+      await new Promise(r => { img.onload = r; img.onerror = r; });
+      const imgW = pageW - margin*2;
+      const ratio = img.naturalWidth ? img.naturalHeight / img.naturalWidth : 0.7;
+      doc.addImage(state.imageDataURL, 'PNG', margin, margin, imgW, imgW * ratio);
+    }
+    doc.save(`iskaan-${Date.now()}.pdf`);
+    showStatus(t.statusPdfSuccess, 'success');
+  } catch (err) {
+    showStatus(t.statusPdfError(err.message), 'error');
+  } finally {
+    hideLoader();
+  }
+}
+
+let _amiriB64Cache = null;
+async function loadAmiriBase64(){
+  if (_amiriB64Cache) return _amiriB64Cache;
+  const url = './Amiri-Regular.ttf';
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error('Failed to load Amiri font');
+  const buf = await resp.arrayBuffer();
+  const bytes = new Uint8Array(buf);
+  let bin = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  }
+  _amiriB64Cache = btoa(bin);
+  return _amiriB64Cache;
+}
+
+function exportTXT(){
+  const t = I18N[state.uiLang];
+  if (!state.ocrText) return;
+  const blob = new Blob([state.ocrText], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `iskaan-${Date.now()}.txt`;
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 100);
+  showStatus(t.statusTxtSuccess, 'success');
+}
+
+function setLang(value){
+  const uiLang = getI18nKey(value);
+  const t = I18N[uiLang];
+  if (!t) return;
+  state.uiLang = uiLang;
+  state.lang = t.ocrLang;
+  state.tesseractReady = false;
+  document.querySelectorAll('.chip').forEach(c =>
+    c.classList.toggle('active', c.dataset.lang === value));
+  if (state.worker) {
+    state.worker.terminate?.();
+    state.worker = null;
+  }
+  applyTranslations();
+}
+
+function showStatus(msg, kind){
+  const el = $('status');
+  el.textContent = msg;
+  el.className = 'status ' + (kind||'info');
+  el.style.display = 'block';
+}
+function showLoader(text){
+  $('loader-text').textContent = text || 'Loading…';
+  $('loader').classList.remove('hidden');
+}
+function hideLoader(){ $('loader').classList.add('hidden'); }
+
+function maybeShowIOSHint(){
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) ||
+                (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches
+                    || window.navigator.standalone === true;
+  const dismissed = localStorage.getItem('iskaan-ios-hint-dismissed') === '1';
+  if (isIOS && !isStandalone && !dismissed) {
+    $('ios-install-hint').style.display = 'block';
+  }
+}
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./service-worker.js')
+      .then(r => console.log('SW ready:', r.scope))
+      .catch(err => console.warn('SW failed:', err));
+  });
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  applyTranslations();
+  $('btn-open-camera')?.addEventListener('click', openCamera);
+  $('btn-capture')?.addEventListener('click', captureImage);
+  $('btn-retake')?.addEventListener('click', retake);
+  $('btn-ocr')?.addEventListener('click', runOCR);
+  $('file-input')?.addEventListener('change', handleFileUpload);
+  $('btn-export-pdf')?.addEventListener('click', exportPDF);
+  $('btn-export-txt')?.addEventListener('click', exportTXT);
+  $('ios-hint-close')?.addEventListener('click', () => {
+    $('ios-install-hint').style.display = 'none';
+    localStorage.setItem('iskaan-ios-hint-dismissed', '1');
+  });
+  document.querySelectorAll('.chip').forEach(c =>
+    c.addEventListener('click', () => setLang(c.dataset.lang)));
+  maybeShowIOSHint();
+});
+
+window.addEventListener('pagehide', stopCamera);
