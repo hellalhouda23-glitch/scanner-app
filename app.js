@@ -7,7 +7,9 @@ const state = {
   lang: 'ara',
   uiLang: 'ara',
   worker: null,
-  tesseractReady: false
+  tesseractReady: false,
+  lastStatus: null,
+  lastLoader: null
 };
 
 const $ = id => document.getElementById(id);
@@ -179,6 +181,33 @@ function applyTranslations() {
   if (resultEl && resultEl.classList.contains('empty')) {
     resultEl.textContent = t.resultPlaceholder;
   }
+
+  // Re-render visible status messages when language changes
+  if (state.lastStatus) {
+    const statusEl = $('status');
+    if (statusEl && statusEl.style.display !== 'none') {
+      const { key, kind, args } = state.lastStatus;
+      const entry = t[key];
+      const msg = typeof entry === 'function' ? entry(...args) : entry;
+      if (msg != null) {
+        statusEl.textContent = msg;
+        statusEl.className = 'status ' + (kind || 'info');
+      }
+    }
+  }
+
+  // Re-render visible loader message when language changes
+  if (state.lastLoader) {
+    const loaderEl = $('loader');
+    if (loaderEl && !loaderEl.classList.contains('hidden')) {
+      const { key, args } = state.lastLoader;
+      const entry = t[key];
+      const text = typeof entry === 'function' ? entry(...args) : entry;
+      if (text != null) {
+        $('loader-text').textContent = text;
+      }
+    }
+  }
 }
 
 function loadScript(src) {
@@ -198,15 +227,15 @@ function loadScript(src) {
 async function ensureTesseractReady() {
   if (state.tesseractReady && state.worker) return state.worker;
   const t = I18N[state.uiLang];
-  showLoader(t.loaderTesseract);
+  showLoader('loaderTesseract');
   try {
     await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js');
     const langs = state.lang.replace(/\s/g, '');
-    showLoader(t.loaderLang);
+    showLoader('loaderLang');
     const worker = await Tesseract.createWorker(langs, 1, {
       logger: m => {
         if (m.progress != null) {
-          showLoader(t.loaderProcessing(m.progress, m.status));
+          showLoader('loaderProcessing', m.progress, m.status);
         }
       }
     });
@@ -216,7 +245,7 @@ async function ensureTesseractReady() {
     return worker;
   } catch (err) {
     hideLoader();
-    showStatus(t.statusTesseractError, 'error');
+    showStatus('statusTesseractError', 'error');
     throw err;
   }
 }
@@ -235,9 +264,9 @@ async function openCamera(){
     $('preview').style.display = 'none';
     $('btn-capture').disabled = false;
     $('btn-open-camera').disabled = true;
-    showStatus(t.statusCameraReady, 'info');
+    showStatus('statusCameraReady', 'info');
   } catch (err) {
-    showStatus(t.statusCameraError(err.message), 'error');
+    showStatus('statusCameraError', 'error', err.message);
   }
 }
 
@@ -260,7 +289,7 @@ function captureImage(){
     $('btn-ocr').disabled = false;
     state.imageDataURL = canvas.toDataURL('image/png');
     stopCamera();
-    showStatus(t.statusImageCaptured, 'success');
+    showStatus('statusImageCaptured', 'success');
   }, 'image/png');
 }
 
@@ -300,7 +329,7 @@ function handleFileUpload(e){
     $('placeholder').style.display = 'none';
     $('btn-ocr').disabled = false;
     $('btn-retake').disabled = false;
-    showStatus(t.statusImageUploaded, 'success');
+    showStatus('statusImageUploaded', 'success');
   };
   reader.readAsDataURL(file);
 }
@@ -309,15 +338,15 @@ async function runOCR(){
   if (!state.imageDataURL) return;
   try {
     const worker = await ensureTesseractReady();
-    showLoader(t.loaderOcr);
+    showLoader('loaderOcr');
     const { data } = await worker.recognize(state.imageDataURL);
     state.ocrText = data.text || '';
     $('result').textContent = state.ocrText || t.statusNoText;
     $('result').classList.remove('empty');
     $('export-actions').style.display = 'flex';
-    showStatus(t.statusOcrSuccess(state.ocrText.length), 'success');
+    showStatus('statusOcrSuccess', 'success', state.ocrText.length);
   } catch (err) {
-    showStatus(t.statusOcrError(err.message || err), 'error');
+    showStatus('statusOcrError', 'error', err.message || err);
   } finally {
     hideLoader();
   }
@@ -339,7 +368,7 @@ function shapeArabic(input){
 async function exportPDF(){
   const t = I18N[state.uiLang];
   if (!state.ocrText) return;
-  showLoader(t.loaderPdf);
+  showLoader('loaderPdf');
   try {
     await loadScript('https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js');
     const jsPDFCtor = window.jspdf?.jsPDF || window.jsPDF;
@@ -379,9 +408,9 @@ async function exportPDF(){
       doc.addImage(state.imageDataURL, 'PNG', margin, margin, imgW, imgW * ratio);
     }
     doc.save(`iskaan-${Date.now()}.pdf`);
-    showStatus(t.statusPdfSuccess, 'success');
+    showStatus('statusPdfSuccess', 'success');
   } catch (err) {
-    showStatus(t.statusPdfError(err.message), 'error');
+    showStatus('statusPdfError', 'error', err.message);
   } finally {
     hideLoader();
   }
@@ -413,7 +442,7 @@ function exportTXT(){
   a.href = url; a.download = `iskaan-${Date.now()}.txt`;
   document.body.appendChild(a); a.click();
   setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 100);
-  showStatus(t.statusTxtSuccess, 'success');
+  showStatus('statusTxtSuccess', 'success');
 }
 
 function setLang(value){
@@ -432,13 +461,21 @@ function setLang(value){
   applyTranslations();
 }
 
-function showStatus(msg, kind){
+function showStatus(key, kind, ...args){
+  const t = I18N[state.uiLang] || I18N.ara;
+  const entry = t[key];
+  const msg = typeof entry === 'function' ? entry(...args) : entry;
+  state.lastStatus = { key, kind, args };
   const el = $('status');
   el.textContent = msg;
   el.className = 'status ' + (kind||'info');
   el.style.display = 'block';
 }
-function showLoader(text){
+function showLoader(key, ...args){
+  const t = I18N[state.uiLang] || I18N.ara;
+  const entry = t[key];
+  const text = typeof entry === 'function' ? entry(...args) : entry;
+  state.lastLoader = { key, args };
   $('loader-text').textContent = text || 'Loading…';
   $('loader').classList.remove('hidden');
 }
@@ -482,3 +519,4 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 
 window.addEventListener('pagehide', stopCamera);
+      
